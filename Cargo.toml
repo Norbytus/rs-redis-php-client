@@ -1,0 +1,13 @@
+[package]
+name = "rs-redis-php-client"
+version = "0.1.0"
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+crate-type = ["dylib"]
+
+[dependencies]
+ext-php-rs = "0.0.7"
+redis-client = { git = "https://github.com/Norbytus/redis-client/" }
