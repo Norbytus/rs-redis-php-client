@@ -2,6 +2,13 @@
 
 declare(strict_types=1);
 
-$t = new Rust\Client("127.0.0.1:6379");
-$t->setValue('test', 1);
-print_r($t->getValue('test'));
+
+try {
+    $t = new Rust\Client("127.0.0.1:6379");
+} catch (Rust\Exception\RedisClientException $e) {
+    print_r($e->getMessage());
+
+    exit(1);
+}
+
+exit(0);
