@@ -16,14 +16,15 @@ use ext_php_rs::{
     ZendObjectHandler,
 };
 use redis_client::redis::Values;
-use std::rc::Rc;
 use crate::common::arg_to_string;
+use std::cell::Cell;
 
-type ConnectionWrap = Option<Rc<std::sync::Mutex<redis_client::redis::Client>>>;
+type ConnectionWrap = Option<Cell<redis_client::redis::Client>>;
 
 #[derive(ZendObjectHandler)]
 pub struct Client {
     client: ConnectionWrap,
+    args: Vec<String>
 }
 
 impl Client {
@@ -53,7 +54,8 @@ impl Client {
             return;
         };
 
-        this.client = Some(Rc::new(std::sync::Mutex::new(client)));
+        this.client = Some(Cell::new(client));
+        this.args = Vec::new();
     }
 
     pub extern "C" fn set_value(execute_data: &mut ExecutionData, _: &mut Zval) {
@@ -69,7 +71,7 @@ impl Client {
 
         let this = ZendClassObject::<Self>::get(execute_data).unwrap();
 
-        let mutex_client = if let Some(client) = this.client.as_mut() {
+        let client = if let Some(client) = this.client.as_mut() {
             client
         } else {
             unsafe {
@@ -79,20 +81,10 @@ impl Client {
             return;
         };
 
-        let mut client = if let Ok(client) = mutex_client.lock() {
-            client
-        } else {
-            unsafe {
-                exceptions::throw(crate::RS_EX.as_ref().unwrap(), "Connection already use");
-            }
-
-            return;
-        };
-
         let result = redis_client::redis::Cmd::cmd("SET")
             .arg(&key)
             .arg(&value)
-            .execute(&mut client);
+            .execute(client.get_mut());
 
         if let Err(e) = result {
             unsafe {
@@ -101,6 +93,57 @@ impl Client {
 
             return;
         }
+    }
+
+    pub extern "C" fn cmd(execute_data: &mut ExecutionData, return_value: &mut Zval) {
+        let mut cmd_arg = Arg::new("cmd", DataType::String);
+
+        parse_args!(execute_data, cmd_arg);
+
+        let mut cmd = String::new();
+        arg_to_string(cmd_arg, "cmd", &mut cmd);
+
+        let this = ZendClassObject::<Self>::get(execute_data).unwrap();
+        this.args.push(cmd);
+
+        return_value.set_object(execute_data.get_self().unwrap(), false);
+    }
+
+    pub extern "C" fn execute(execute_data: &mut ExecutionData, _: &mut Zval) {
+        let this = ZendClassObject::<Self>::get(execute_data).unwrap();
+
+        let args: Vec<String> = this.args.clone();
+        this.args.clear();
+
+        if args.is_empty() {
+            unsafe {
+                exceptions::throw(crate::RS_EX.as_ref().unwrap(), "Empty argument list");
+            }
+        }
+
+        let client = if let Some(client) = this.client.as_mut() {
+            client
+        } else {
+            unsafe {
+                exceptions::throw(crate::RS_EX.as_ref().unwrap(), "Can't get client");
+            }
+
+            return;
+        };
+
+        let mut cmd_option: Option<redis_client::redis::Cmd> = None;
+        for (n, arg) in args.iter().enumerate() {
+            if n == 0 {
+                cmd_option = Some(redis_client::redis::Cmd::cmd(&arg));
+                continue;
+            }
+
+            if let Some(cmd) = cmd_option {
+                cmd_option = Some(cmd.arg(arg));
+            }
+        } 
+
+        let _ = cmd_option.unwrap().execute(&mut client.get_mut());
     }
 
     pub extern "C" fn get_value(execute_data: &mut ExecutionData, return_value: &mut Zval) {
@@ -113,22 +156,19 @@ impl Client {
 
         let this = ZendClassObject::<Self>::get(execute_data).unwrap();
 
-        let mutex_client = match this.client.as_mut() {
-            Some(client) => client,
-            None => {
-                unsafe {
-                    exceptions::throw(crate::RS_EX.as_ref().unwrap(), "Can't get client");
-                }
-
-                return;
+        let client = if let Some(client) = this.client.as_mut() {
+            client
+        } else {
+            unsafe {
+                exceptions::throw(crate::RS_EX.as_ref().unwrap(), "Can't get client");
             }
-        };
 
-        let mut client = mutex_client.lock().unwrap();
+            return;
+        };
 
         let result = redis_client::redis::Cmd::cmd("GET")
             .arg(&key)
-            .execute(&mut client);
+            .execute(client.get_mut());
 
         if let Err(e) = result {
             unsafe {
@@ -185,10 +225,20 @@ impl Client {
             .returns(DataType::String, false, false)
             .build();
 
+        let cmd = FunctionBuilder::new("cmd", Client::cmd)
+            .arg(Arg::new("cmd", DataType::String))
+            .returns(DataType::True, true, false)
+            .build();
+
+        let execute = FunctionBuilder::new("execute", Client::execute)
+            .build();
+
         ClassBuilder::new("Redis\\Client")
             .method(constructor, MethodFlags::Public)
             .method(set, MethodFlags::Public)
             .method(get, MethodFlags::Public)
+            .method(cmd, MethodFlags::Public)
+            .method(execute, MethodFlags::Public)
             .property("addr", "", PropertyFlags::Private)
             .object_override::<Self>()
             .build()
@@ -197,6 +247,6 @@ impl Client {
 
 impl Default for Client {
     fn default() -> Self {
-        Self { client: None }
+        Self { client: None, args: Vec::new() }
     }
 }

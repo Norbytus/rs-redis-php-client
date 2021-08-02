@@ -25,7 +25,8 @@ pub extern "C" fn get_module() -> *mut ModuleEntry {
 pub extern "C" fn module_init(_type: i32, _module_number: i32) -> i32 {
     let rs_ex = crate::exception::RedisClientException::build();
     unsafe { crate::RS_EX.replace(rs_ex.as_mut().unwrap()) };
-    crate::client::Client::get_build_for_php();
+    let rs_client = crate::client::Client::get_build_for_php();
+    unsafe { crate::CLIENT_CLASS.replace(rs_client.as_mut().unwrap()) };
 
     0
 }
