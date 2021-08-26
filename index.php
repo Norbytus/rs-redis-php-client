@@ -8,4 +8,6 @@ $t->cmd('ping')->execute();
 $t->cmd('ping')->execute();
 $t->set("test", "test");
 
+print_r($t->get('test'));
+
 exit(0);

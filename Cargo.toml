@@ -1,6 +1,6 @@
 [package]
 name = "rs-redis-php-client"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -9,5 +9,5 @@ edition = "2018"
 crate-type = ["dylib"]
 
 [dependencies]
-ext-php-rs = { path = "../ext-php-rs" }
+ext-php-rs = { git = "https://github.com/davidcole1340/ext-php-rs", branch = "php_class_attr" }
 redis-client = { git = "https://github.com/Norbytus/redis-client/" }
